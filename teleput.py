@@ -6,7 +6,8 @@ import config
 from aiogram import Bot, types
 from aiogram.dispatcher import Dispatcher
 from aiogram.dispatcher.webhook import SendMessage
-from aiogram.utils.executor import set_webhook
+from aiogram.dispatcher.webhook import DEFAULT_ROUTE_NAME, WebhookRequestHandler
+from aiogram.utils.executor import set_webhook, Executor
 from aiogram.utils.exceptions import TelegramAPIError
 from aiohttp import web, hdrs
 
@@ -180,14 +181,38 @@ async def http_root(request):
     return web.Response(text='Teleput')
 
 
-if __name__ == '__main__':
+async def set_webhook_async(
+        dispatcher: Dispatcher, webhook_path: str, *, loop=None,
+        skip_updates: bool = None, on_startup=None,
+        on_shutdown=None, check_ip: bool = False,
+        retry_after=None, route_name: str = DEFAULT_ROUTE_NAME,
+        web_app=None):
+    """Rewriting from aiogram/utils/executor.py to support running inside a loop."""
+    executor = Executor(dispatcher, skip_updates=skip_updates, check_ip=check_ip,
+                        retry_after=retry_after, loop=loop)
+    if on_startup is not None:
+        executor.on_startup(on_startup)
+    if on_shutdown is not None:
+        executor.on_shutdown(on_shutdown)
+
+    executor._prepare_webhook(webhook_path, WebhookRequestHandler, route_name, web_app)
+    await executor._startup_webhook()
+    return executor
+
+
+def make_app():
     app = web.Application()
     app.add_routes([
         web.get('/', http_root),
         web.post('/post', post),
         web.post('/upload', post_file),
     ])
-    executor = set_webhook(
+    return app
+
+
+async def async_app():
+    app = make_app()
+    await set_webhook_async(
         dispatcher=dp,
         webhook_path=config.WEBHOOK_PATH,
         on_startup=on_startup,
@@ -195,4 +220,16 @@ if __name__ == '__main__':
         skip_updates=True,
         web_app=app,
     )
-    executor.run_app()
+    return app
+
+
+if __name__ == '__main__':
+    executor = set_webhook(
+        dispatcher=dp,
+        webhook_path=config.WEBHOOK_PATH,
+        on_startup=on_startup,
+        on_shutdown=on_shutdown,
+        skip_updates=True,
+        web_app=make_app(),
+    )
+    executor.run_app(host=config.WEBAPP_HOST, port=config.WEBAPP_PORT)
