@@ -1,0 +1,5 @@
+Pipfile*
+__pycache__/
+*.swp
+*.sqlite
+config_local.py
