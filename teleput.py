@@ -88,6 +88,7 @@ async def remove_user(chat_id: int):
 
 @dp.message_handler(commands=['start'])
 async def get_key(message: types.Message):
+    # TODO: if a group, check for admin permissions
     key = await find_key(message.chat.id)
     reply = f'Your key is: {key}'
     return SendMessage(message.chat.id, reply)
@@ -95,6 +96,7 @@ async def get_key(message: types.Message):
 
 @dp.message_handler(commands=['new'])
 async def new_key(message: types.Message):
+    # TODO: if a group, check for admin permissions
     key = await find_key(message.chat.id, True)
     reply = f'Your new key is: {key}\n\nNow update it in your tools and extensions.'
     return SendMessage(message.chat.id, reply)
@@ -102,6 +104,7 @@ async def new_key(message: types.Message):
 
 @dp.message_handler(commands=['stop'])
 async def stop(message: types.Message):
+    # TODO: if a group, check for admin permissions
     await remove_user(message.chat.id)
     reply = 'You have been deleted. Click /start to continue using the bot.'
     return SendMessage(message.chat.id, reply)
@@ -109,6 +112,7 @@ async def stop(message: types.Message):
 
 @dp.message_handler()
 async def hint(message: types.Message):
+    # TODO: if a group, check for admin permissions
     return SendMessage(message.chat.id, 'Use /start to see your key or /new to generate a new one.')
 
 
@@ -138,6 +142,7 @@ async def post_file(request):
     raw = False
     text = None
     filename = None
+    filetype = None
     fobj = None
     while True:
         field = await reader.next()
@@ -153,9 +158,9 @@ async def post_file(request):
             text = await field.text()
         elif field.name == 'media':
             size = 0
-            logging.info('Multipart file received. Name %s, type %s',
-                         field.filename, field.headers[hdrs.CONTENT_TYPE])
             filename = field.filename
+            filetype = field.headers.get(hdrs.CONTENT_TYPE)
+            logging.info('Multipart file received. Name %s, type %s', filename, filetype)
             fobj = tempfile.TemporaryFile()
             while True:
                 chunk = await field.read_chunk()
@@ -173,7 +178,24 @@ async def post_file(request):
     if not fobj:
         await bot.send_message(chat_id, text)
     else:
-        raise web.HTTPNotImplemented(text='Uploading files is not implemented yet.')
+        if not filetype or raw:
+            filetype = 'document'
+        elif '/jpeg' in filetype or '/png' in filetype:
+            filetype = 'photo'
+        elif '/mp4' in filetype:
+            filetype = 'video'
+        elif 'audio/mpeg' in filetype or 'm4a' in filetype:
+            filetype = 'audio'
+        elif 'image/gif' in filetype:
+            filetype = 'animation'
+        else:
+            filetype = 'document'
+        input_file = types.InputFile(fobj, filename)
+        if filetype == 'document':
+            await bot.send_document(chat_id, input_file, caption=text)
+        # TODO
+        else:
+            raise web.HTTPNotImplemented(reason=f'Cannot send file with type {filetype}.')
     return web.Response(text='OK')
 
 
