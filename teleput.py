@@ -40,6 +40,7 @@ async def get_db():
         await _db.execute(q)
         await _db.execute('create unique index users_id_idx on users (chat_id)')
         await _db.execute('create unique index users_token_idx on users (token)')
+        await _db.commit()
     return _db
 
 
@@ -71,6 +72,7 @@ async def find_key(chat_id: int, renew: bool = False) -> str:
         key = generate_key()
         # TODO: process an index error with a duplicate token
         await db.execute('insert into users (chat_id, token) values (?, ?)', (chat_id, key))
+        await db.commit()
     return key
 
 
@@ -84,6 +86,7 @@ async def find_chat(key: str) -> int:
 async def remove_user(chat_id: int):
     db = await get_db()
     await db.execute('delete from users where chat_id = ?', (chat_id,))
+    await db.commit()
 
 
 @dp.message_handler(commands=['start'])
@@ -142,7 +145,7 @@ async def post_file(request):
     raw = False
     text = None
     filename = None
-    filetype = None
+    mime = None
     fobj = None
     while True:
         field = await reader.next()
@@ -159,8 +162,8 @@ async def post_file(request):
         elif field.name == 'media':
             size = 0
             filename = field.filename
-            filetype = field.headers.get(hdrs.CONTENT_TYPE)
-            logging.info('Multipart file received. Name %s, type %s', filename, filetype)
+            mime = field.headers.get(hdrs.CONTENT_TYPE)
+            logging.info('Multipart file received. Name %s, type %s', filename, mime)
             fobj = tempfile.TemporaryFile()
             while True:
                 chunk = await field.read_chunk()
@@ -179,22 +182,33 @@ async def post_file(request):
     if not fobj:
         await bot.send_message(chat_id, text)
     else:
-        if not filetype or raw:
+        if not mime or raw:
             filetype = 'document'
-        elif '/jpeg' in filetype or '/png' in filetype:
+        elif '/jpeg' in mime or '/png' in mime:
             filetype = 'photo'
-        elif '/mp4' in filetype:
+        elif '/mp4' in mime:
             filetype = 'video'
-        elif 'audio/mpeg' in filetype or 'm4a' in filetype:
+        elif 'audio/mpeg' in mime or 'm4a' in mime:
             filetype = 'audio'
-        elif 'image/gif' in filetype:
+        elif 'audio/ogg' in mime:
+            filetype = 'voice'
+        elif 'image/gif' in mime:
             filetype = 'animation'
         else:
             filetype = 'document'
         input_file = types.InputFile(fobj, filename)
         if filetype == 'document':
             await bot.send_document(chat_id, input_file, caption=text)
-        # TODO
+        elif filetype == 'photo':
+            await bot.send_photo(chat_id, input_file, caption=text)
+        elif filetype == 'video':
+            await bot.send_video(chat_id, input_file, caption=text)
+        elif filetype == 'audio':
+            await bot.send_audio(chat_id, input_file, caption=text)
+        elif filetype == 'voice':
+            await bot.send_voice(chat_id, input_file, caption=text)
+        elif filetype == 'animation':
+            await bot.send_animation(chat_id, input_file, caption=text)
         else:
             raise web.HTTPNotImplemented(reason=f'Cannot send file with type {filetype}.')
     return web.Response(text='OK')
