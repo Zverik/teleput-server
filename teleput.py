@@ -171,6 +171,7 @@ async def post_file(request):
                     raise web.HTTPRequestEntityTooLarge(
                         text=f'Max upload size is {config.MAX_FILE_SIZE}')
                 fobj.write(chunk)
+            fobj.seek(0)
     if not chat_id:
         raise web.HTTPBadRequest(reason='Missing key')
     if not text and not fobj:
