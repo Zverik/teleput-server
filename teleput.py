@@ -1,8 +1,8 @@
 import logging
 import aiosqlite
-import os
 import random
 import tempfile
+import config
 from aiogram import Bot, types
 from aiogram.dispatcher import Dispatcher
 from aiogram.dispatcher.webhook import SendMessage
@@ -11,20 +11,9 @@ from aiogram.utils.exceptions import TelegramAPIError
 from aiohttp import web, hdrs
 
 
-API_TOKEN = '1813494320:AAGRaD1guyIz5tLBw4OgRWuLTIQWegBDbnY'
-
-WEBHOOK_HOST = 'https://telebot.textual.ru'
-WEBHOOK_PATH = '/telegram'
-WEBAPP_HOST = 'localhost'
-WEBAPP_PORT = 3001
-DATABASE = os.path.join(os.path.dirname(__file__), 'teleput.sqlite')
-KEY_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz123456789_-+=!@#$%&*/'
-KEY_LENGTH = 10
-MAX_FILE_SIZE = 10000000
-
 logging.basicConfig(level=logging.INFO)
 
-bot = Bot(API_TOKEN)
+bot = Bot(config.API_TOKEN)
 dp = Dispatcher(bot)
 _db = None
 
@@ -33,7 +22,7 @@ async def get_db():
     global _db
     if _db is not None and _db._running:
         return _db
-    _db = await aiosqlite.connect(DATABASE)
+    _db = await aiosqlite.connect(config.DATABASE)
     _db.row_factory = aiosqlite.Row
     exists_query = ("select count(*) from sqlite_master where type = 'table' "
                     "and name = 'users'")
@@ -60,11 +49,11 @@ async def on_shutdown(dp):
 
 
 async def on_startup(dp):
-    await bot.set_webhook(WEBHOOK_HOST + WEBHOOK_PATH)
+    await bot.set_webhook(config.WEBHOOK_HOST + config.WEBHOOK_PATH)
 
 
 def generate_key() -> str:
-    return ''.join(random.choices(KEY_CHARS, k=KEY_LENGTH))
+    return ''.join(random.choices(config.KEY_CHARS, k=config.KEY_LENGTH))
 
 
 async def find_key(chat_id: int, renew: bool = False) -> str:
@@ -172,9 +161,9 @@ async def post_file(request):
                 if not chunk:
                     break
                 size += len(chunk)
-                if size > MAX_FILE_SIZE:
+                if size > config.MAX_FILE_SIZE:
                     raise web.HTTPRequestEntityTooLarge(
-                        text=f'Max upload size is {MAX_FILE_SIZE}')
+                        text=f'Max upload size is {config.MAX_FILE_SIZE}')
                 fobj.write(chunk)
     if not chat_id:
         raise web.HTTPBadRequest(reason='Missing key')
@@ -200,7 +189,7 @@ if __name__ == '__main__':
     ])
     executor = set_webhook(
         dispatcher=dp,
-        webhook_path=WEBHOOK_PATH,
+        webhook_path=config.WEBHOOK_PATH,
         on_startup=on_startup,
         on_shutdown=on_shutdown,
         skip_updates=True,
