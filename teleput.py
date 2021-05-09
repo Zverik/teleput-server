@@ -273,14 +273,17 @@ async def set_webhook_async(
 
 def make_app():
     app = web.Application()
-    app = aiohttp_cors.setup(app, defaults={
-        "*": aiohttp_cors.ResourceOptions(allow_credentials=False)
-    })
     app.add_routes([
         web.get('/', http_root),
         web.post('/post', post),
         web.post('/upload', post_file),
     ])
+    # Enable CORS. What an abysmal API!
+    cors = aiohttp_cors.setup(app, defaults={
+        "*": aiohttp_cors.ResourceOptions(allow_credentials=False)
+    })
+    for route in list(app.router.routes()):
+        cors.add(route)
     return app
 
 
