@@ -107,9 +107,10 @@ def check_group_admin(func):
 async def get_key(message: types.Message):
     key = await find_key(message.chat.id)
     if not key:
-        return SendMessage(message.user.id, 'Failed to create a key, please try again.')
+        return SendMessage(message.from_user.id,
+                           'Failed to create a key, please try again.')
     reply = f'Your key is: {key}'
-    return SendMessage(message.user.id, reply)
+    return SendMessage(message.from_user.id, reply)
 
 
 @check_group_admin
@@ -117,9 +118,9 @@ async def get_key(message: types.Message):
 async def new_key(message: types.Message):
     key = await find_key(message.chat.id, True)
     if not key:
-        return SendMessage(message.user.id, 'Failed to create a key, please try again.')
+        return SendMessage(message.from_user.id, 'Failed to create a key, please try again.')
     reply = f'Your new key is: {key}\n\nNow update it in your tools and extensions.'
-    return SendMessage(message.user.id, reply)
+    return SendMessage(message.from_user.id, reply)
 
 
 @check_group_admin
@@ -127,7 +128,7 @@ async def new_key(message: types.Message):
 async def stop(message: types.Message):
     await remove_user(message.chat.id)
     reply = 'You have been deleted. Click /start to continue using the bot.'
-    return SendMessage(message.user.id, reply)
+    return SendMessage(message.from_user.id, reply)
 
 
 @check_group_admin
