@@ -141,6 +141,52 @@ async def hint(message: types.Message):
             'Use /start to see your key or /new to generate a new one.')
 
 
+async def send_file_or_text(chat_id: int, text: str, input_file=None, mime=None):
+    try:
+        if not input_file:
+            await bot.send_message(chat_id, text)
+        else:
+            if not mime:
+                filetype = 'document'
+            elif '/jpeg' in mime or '/png' in mime:
+                filetype = 'photo'
+            elif '/mp4' in mime:
+                filetype = 'video'
+            elif 'audio/mpeg' in mime or 'm4a' in mime:
+                filetype = 'audio'
+            elif 'audio/ogg' in mime:
+                filetype = 'voice'
+            elif 'image/gif' in mime:
+                filetype = 'animation'
+            else:
+                filetype = 'document'
+
+            if filetype == 'document':
+                await bot.send_document(chat_id, input_file, caption=text)
+            elif filetype == 'photo':
+                await bot.send_photo(chat_id, input_file, caption=text)
+            elif filetype == 'video':
+                await bot.send_video(chat_id, input_file, caption=text)
+            elif filetype == 'audio':
+                await bot.send_audio(chat_id, input_file, caption=text)
+            elif filetype == 'voice':
+                await bot.send_voice(chat_id, input_file, caption=text)
+            elif filetype == 'animation':
+                await bot.send_animation(chat_id, input_file, caption=text)
+            else:
+                raise web.HTTPNotImplemented(reason=f'Cannot send file with type {filetype}.')
+    except exceptions.BotBlocked:
+        raise web.HTTPForbidden(reason='User has blocked the bot')
+    except exceptions.ChatNotFound:
+        raise web.HTTPGone(reason='Chat_id is obsolete')
+    except exceptions.RetryAfter as e:
+        raise web.HTTPTooManyRequests(reason=f'Flood limit exceeded, wait {e.timeout} seconds')
+    except exceptions.UserDeactivated:
+        raise web.HTTPGone(reason='User is deactivated')
+    except exceptions.TelegramAPIError as e:
+        raise web.HTTPServiceUnavailable(reason=f'Telegram API Error: {e}')
+
+
 async def post(request):
     if request.content_type == 'application/json':
         data = await request.json()
@@ -152,12 +198,9 @@ async def post(request):
     chat_id = await find_chat(data['key'])
     if not chat_id:
         raise web.HTTPUnauthorized(reason='Incorrect key')
-    if 'text' not in data:
+    if 'text' not in data and 'media_url' not in data:
         raise web.HTTPBadRequest(reason='Missing content')
-    try:
-        await bot.send_message(chat_id, data['text'])
-    except Exception as e:
-        raise web.HTTPServiceUnavailable(reason=f'Error while sending the message: {e}')
+    await send_file_or_text(chat_id, data['text'], data.get('media_url'), data.get('mime'))
     return web.Response(text='OK')
 
 
@@ -201,50 +244,8 @@ async def post_file(request):
         raise web.HTTPBadRequest(reason='Missing key')
     if not text and not fobj:
         raise web.HTTPBadRequest(reason='Nothing to post')
-    try:
-        if not fobj:
-            await bot.send_message(chat_id, text)
-        else:
-            if not mime or raw:
-                filetype = 'document'
-            elif '/jpeg' in mime or '/png' in mime:
-                filetype = 'photo'
-            elif '/mp4' in mime:
-                filetype = 'video'
-            elif 'audio/mpeg' in mime or 'm4a' in mime:
-                filetype = 'audio'
-            elif 'audio/ogg' in mime:
-                filetype = 'voice'
-            elif 'image/gif' in mime:
-                filetype = 'animation'
-            else:
-                filetype = 'document'
-
-            input_file = types.InputFile(fobj, filename)
-            if filetype == 'document':
-                await bot.send_document(chat_id, input_file, caption=text)
-            elif filetype == 'photo':
-                await bot.send_photo(chat_id, input_file, caption=text)
-            elif filetype == 'video':
-                await bot.send_video(chat_id, input_file, caption=text)
-            elif filetype == 'audio':
-                await bot.send_audio(chat_id, input_file, caption=text)
-            elif filetype == 'voice':
-                await bot.send_voice(chat_id, input_file, caption=text)
-            elif filetype == 'animation':
-                await bot.send_animation(chat_id, input_file, caption=text)
-            else:
-                raise web.HTTPNotImplemented(reason=f'Cannot send file with type {filetype}.')
-    except exceptions.BotBlocked:
-        raise web.HTTPForbidden(reason='User has blocked the bot')
-    except exceptions.ChatNotFound:
-        raise web.HTTPGone(reason='Chat_id is obsolete')
-    except exceptions.RetryAfter as e:
-        raise web.HTTPTooManyRequests(reason=f'Flood limit exceeded, wait {e.timeout} seconds')
-    except exceptions.UserDeactivated:
-        raise web.HTTPGone(reason='User is deactivated')
-    except exceptions.TelegramAPIError as e:
-        raise web.HTTPServiceUnavailable(reason=f'Telegram API Error: {e}')
+    input_file = None if not fobj else types.InputFile(fobj, filename)
+    await send_file_or_text(chat_id, text, input_file, None if raw else mime)
     return web.Response(text='OK')
 
 
