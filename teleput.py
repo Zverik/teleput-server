@@ -3,6 +3,7 @@ import aiosqlite
 import random
 import tempfile
 import config
+import aiohttp_cors
 from aiogram import Bot, types
 from aiogram.dispatcher import Dispatcher
 from aiogram.dispatcher.webhook import SendMessage, DEFAULT_ROUTE_NAME, WebhookRequestHandler
@@ -272,6 +273,9 @@ async def set_webhook_async(
 
 def make_app():
     app = web.Application()
+    app = aiohttp_cors.setup(app, defaults={
+        "*": aiohttp_cors.ResourceOptions(allow_credentials=False)
+    })
     app.add_routes([
         web.get('/', http_root),
         web.post('/post', post),

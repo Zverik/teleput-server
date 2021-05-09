@@ -1,3 +1,4 @@
 aiogram
 aiosqlite
 gunicorn
+aiohttp_cors
