@@ -12,7 +12,7 @@ from aiogram.utils import exceptions
 from aiohttp import web, hdrs
 
 
-logging.basicConfig(level=logging.INFO)
+# logging.basicConfig(level=logging.INFO)
 bot = Bot(config.API_TOKEN)
 dp = Dispatcher(bot)
 _db = None
@@ -146,7 +146,6 @@ async def post(request):
         data = await request.json()
     else:
         data = await request.post()
-    logging.info(f'Received data: {data}')
 
     if 'key' not in data:
         raise web.HTTPBadRequest(reason='Missing key')
@@ -281,7 +280,7 @@ def make_app():
     ])
     # Enable CORS. What an abysmal API!
     cors = aiohttp_cors.setup(app, defaults={
-        "*": aiohttp_cors.ResourceOptions(allow_credentials=False)
+        "*": aiohttp_cors.ResourceOptions(allow_credentials=False, allow_headers='*')
     })
     for route in list(app.router.routes()):
         cors.add(route)
