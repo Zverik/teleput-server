@@ -200,7 +200,7 @@ async def post(request):
         raise web.HTTPUnauthorized(reason='Incorrect key')
     if 'text' not in data and 'media_url' not in data:
         raise web.HTTPBadRequest(reason='Missing content')
-    await send_file_or_text(chat_id, data['text'], data.get('media_url'), data.get('mime'))
+    await send_file_or_text(chat_id, data.get('text'), data.get('media_url'), data.get('mime'))
     return web.Response(text='OK')
 
 
