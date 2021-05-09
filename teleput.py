@@ -5,15 +5,13 @@ import tempfile
 import config
 from aiogram import Bot, types
 from aiogram.dispatcher import Dispatcher
-from aiogram.dispatcher.webhook import SendMessage
-from aiogram.dispatcher.webhook import DEFAULT_ROUTE_NAME, WebhookRequestHandler
+from aiogram.dispatcher.webhook import SendMessage, DEFAULT_ROUTE_NAME, WebhookRequestHandler
 from aiogram.utils.executor import set_webhook, Executor
-from aiogram.utils.exceptions import TelegramAPIError
+from aiogram.utils import exceptions
 from aiohttp import web, hdrs
 
 
-logging.basicConfig(level=logging.INFO)
-
+# logging.basicConfig(level=logging.INFO)
 bot = Bot(config.API_TOKEN)
 dp = Dispatcher(bot)
 _db = None
@@ -69,10 +67,14 @@ async def find_key(chat_id: int, renew: bool = False) -> str:
         row = await cursor.fetchone()
         key = None if not row else row[0]
     if not key:
-        key = generate_key()
-        # TODO: process an index error with a duplicate token
-        await db.execute('insert into users (chat_id, token) values (?, ?)', (chat_id, key))
-        await db.commit()
+        for i in range(3):
+            try:
+                key = generate_key()
+                await db.execute('insert into users (chat_id, token) values (?, ?)', (chat_id, key))
+                await db.commit()
+                break
+            except aiosqlite.IntegrityError:
+                key = None
     return key
 
 
@@ -89,34 +91,52 @@ async def remove_user(chat_id: int):
     await db.commit()
 
 
+def check_group_admin(func):
+    async def wrapped(message: types.Message):
+        if message.chat.type in (types.ChatType.GROUP, types.ChatType.SUPERGROUP):
+            member = message.chat.getChatMember(message.from_user.id)
+            if not member.is_chat_admin():
+                await message.reply('Only an admin can use this bot.')
+                return
+        return await func(message)
+    return wrapped
+
+
+@check_group_admin
 @dp.message_handler(commands=['start'])
 async def get_key(message: types.Message):
-    # TODO: if a group, check for admin permissions
     key = await find_key(message.chat.id)
+    if not key:
+        return SendMessage(message.user.id, 'Failed to create a key, please try again.')
     reply = f'Your key is: {key}'
-    return SendMessage(message.chat.id, reply)
+    return SendMessage(message.user.id, reply)
 
 
+@check_group_admin
 @dp.message_handler(commands=['new'])
 async def new_key(message: types.Message):
-    # TODO: if a group, check for admin permissions
     key = await find_key(message.chat.id, True)
+    if not key:
+        return SendMessage(message.user.id, 'Failed to create a key, please try again.')
     reply = f'Your new key is: {key}\n\nNow update it in your tools and extensions.'
-    return SendMessage(message.chat.id, reply)
+    return SendMessage(message.user.id, reply)
 
 
+@check_group_admin
 @dp.message_handler(commands=['stop'])
 async def stop(message: types.Message):
-    # TODO: if a group, check for admin permissions
     await remove_user(message.chat.id)
     reply = 'You have been deleted. Click /start to continue using the bot.'
-    return SendMessage(message.chat.id, reply)
+    return SendMessage(message.user.id, reply)
 
 
+@check_group_admin
 @dp.message_handler()
 async def hint(message: types.Message):
-    # TODO: if a group, check for admin permissions
-    return SendMessage(message.chat.id, 'Use /start to see your key or /new to generate a new one.')
+    if message.chat.type in (types.ChatType.PRIVATE,):
+        return SendMessage(
+            message.chat.id,
+            'Use /start to see your key or /new to generate a new one.')
 
 
 async def post(request):
@@ -135,7 +155,7 @@ async def post(request):
     try:
         await bot.send_message(chat_id, data['text'])
     except Exception as e:
-        raise web.HTTPServiceUnavailable(reason=f'Telegram received error {e}')
+        raise web.HTTPServiceUnavailable(reason=f'Error while sending the message: {e}')
     return web.Response(text='OK')
 
 
@@ -179,38 +199,50 @@ async def post_file(request):
         raise web.HTTPBadRequest(reason='Missing key')
     if not text and not fobj:
         raise web.HTTPBadRequest(reason='Nothing to post')
-    if not fobj:
-        await bot.send_message(chat_id, text)
-    else:
-        if not mime or raw:
-            filetype = 'document'
-        elif '/jpeg' in mime or '/png' in mime:
-            filetype = 'photo'
-        elif '/mp4' in mime:
-            filetype = 'video'
-        elif 'audio/mpeg' in mime or 'm4a' in mime:
-            filetype = 'audio'
-        elif 'audio/ogg' in mime:
-            filetype = 'voice'
-        elif 'image/gif' in mime:
-            filetype = 'animation'
+    try:
+        if not fobj:
+            await bot.send_message(chat_id, text)
         else:
-            filetype = 'document'
-        input_file = types.InputFile(fobj, filename)
-        if filetype == 'document':
-            await bot.send_document(chat_id, input_file, caption=text)
-        elif filetype == 'photo':
-            await bot.send_photo(chat_id, input_file, caption=text)
-        elif filetype == 'video':
-            await bot.send_video(chat_id, input_file, caption=text)
-        elif filetype == 'audio':
-            await bot.send_audio(chat_id, input_file, caption=text)
-        elif filetype == 'voice':
-            await bot.send_voice(chat_id, input_file, caption=text)
-        elif filetype == 'animation':
-            await bot.send_animation(chat_id, input_file, caption=text)
-        else:
-            raise web.HTTPNotImplemented(reason=f'Cannot send file with type {filetype}.')
+            if not mime or raw:
+                filetype = 'document'
+            elif '/jpeg' in mime or '/png' in mime:
+                filetype = 'photo'
+            elif '/mp4' in mime:
+                filetype = 'video'
+            elif 'audio/mpeg' in mime or 'm4a' in mime:
+                filetype = 'audio'
+            elif 'audio/ogg' in mime:
+                filetype = 'voice'
+            elif 'image/gif' in mime:
+                filetype = 'animation'
+            else:
+                filetype = 'document'
+
+            input_file = types.InputFile(fobj, filename)
+            if filetype == 'document':
+                await bot.send_document(chat_id, input_file, caption=text)
+            elif filetype == 'photo':
+                await bot.send_photo(chat_id, input_file, caption=text)
+            elif filetype == 'video':
+                await bot.send_video(chat_id, input_file, caption=text)
+            elif filetype == 'audio':
+                await bot.send_audio(chat_id, input_file, caption=text)
+            elif filetype == 'voice':
+                await bot.send_voice(chat_id, input_file, caption=text)
+            elif filetype == 'animation':
+                await bot.send_animation(chat_id, input_file, caption=text)
+            else:
+                raise web.HTTPNotImplemented(reason=f'Cannot send file with type {filetype}.')
+    except exceptions.BotBlocked:
+        raise web.HTTPForbidden(reason='User has blocked the bot')
+    except exceptions.ChatNotFound:
+        raise web.HTTPGone(reason='Chat_id is obsolete')
+    except exceptions.RetryAfter as e:
+        raise web.HTTPTooManyRequests(reason=f'Flood limit exceeded, wait {e.timeout} seconds')
+    except exceptions.UserDeactivated:
+        raise web.HTTPGone(reason='User is deactivated')
+    except exceptions.TelegramAPIError as e:
+        raise web.HTTPServiceUnavailable(reason=f'Telegram API Error: {e}')
     return web.Response(text='OK')
 
 
